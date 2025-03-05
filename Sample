@@ -1,0 +1,126 @@
+# Step 1: Install Required Libraries
+!sudo apt install tesseract-ocr
+!pip install pytesseract opencv-python tensorflow numpy pillow
+
+# Step 2: Import Libraries
+import cv2
+import pytesseract
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, LSTM, Dense, Reshape, TimeDistributed
+from tensorflow.keras.preprocessing.image import img_to_array
+from tensorflow.keras.utils import to_categorical
+from sklearn.model_selection import train_test_split
+from PIL import Image
+import os
+
+# Step 3: Preprocessing using OpenCV
+def preprocess_image(image_path):
+    # Load the image
+    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+
+    # Resize the image (optional)
+    image = cv2.resize(image, (800, 600))
+
+    # Apply Gaussian blur to remove noise
+    blurred = cv2.GaussianBlur(image, (5, 5), 0)
+
+    # Apply adaptive thresholding
+    thresholded = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
+    )
+
+    # Find contours and extract text regions
+    contours, _ = cv2.findContours(thresholded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    text_regions = []
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        if w * h > 100:  # Filter small regions
+            text_regions.append((x, y, x + w, y + h))
+
+    return image, text_regions
+
+# Step 4: Traditional OCR using Tesseract
+def extract_text_with_tesseract(image):
+    # Use Tesseract to extract text
+    custom_config = r'--oem 3 --psm 6'
+    text = pytesseract.image_to_string(image, config=custom_config)
+    return text
+
+# Step 5: CNN-LSTM Model for Handwritten Text Recognition
+def build_cnn_lstm_model(input_shape, num_classes):
+    model = Sequential()
+
+    # CNN Layers
+    model.add(Conv2D(32, (3, 3), activation='relu', input_shape=input_shape))
+    model.add(MaxPooling2D((2, 2)))
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(MaxPooling2D((2, 2)))
+
+    # Reshape for LSTM
+    model.add(Reshape((-1, 64)))
+
+    # LSTM Layers
+    model.add(LSTM(128, return_sequences=True))
+    model.add(LSTM(64, return_sequences=False))
+
+    # Fully Connected Layer
+    model.add(Dense(64, activation='relu'))
+    model.add(Dense(num_classes, activation='softmax'))
+
+    return model
+
+# Step 6: Train the CNN-LSTM Model
+def train_cnn_lstm_model(X_train, y_train, X_test, y_test, num_classes):
+    # Convert labels to one-hot encoding
+    y_train = to_categorical(y_train, num_classes)
+    y_test = to_categorical(y_test, num_classes)
+
+    # Build the model
+    input_shape = X_train[0].shape
+    model = build_cnn_lstm_model(input_shape, num_classes)
+
+    # Compile the model
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+    # Train the model
+    model.fit(X_train, y_train, epochs=10, batch_size=32, validation_data=(X_test, y_test))
+
+    return model
+
+# Step 7: Main Function
+def main():
+    # Upload an image to Colab
+    from google.colab import files
+    uploaded = files.upload()
+
+    # Get the uploaded file path
+    image_path = list(uploaded.keys())[0]
+
+    # Step 1: Preprocess the image
+    image, text_regions = preprocess_image(image_path)
+
+    # Step 2: Extract text using Tesseract OCR
+    for region in text_regions:
+        x1, y1, x2, y2 = region
+        cropped_image = image[y1:y2, x1:x2]
+        text = extract_text_with_tesseract(cropped_image)
+        print(f"Extracted Text (Tesseract): {text}")
+
+    # Step 3: Prepare dataset for CNN-LSTM model
+    # Load dataset (e.g., IAM Handwriting Dataset)
+    # X_train, y_train, X_test, y_test = load_dataset()
+
+    # Step 4: Train the CNN-LSTM model
+    # num_classes = 62  # For alphanumeric characters
+    # model = train_cnn_lstm_model(X_train, y_train, X_test, y_test, num_classes)
+
+    # Step 5: Save the model
+    # model.save('handwritten_text_recognition_model.h5')
+
+    print("Text extraction completed.")
+
+# Run the main function
+if __name__ == "__main__":
+    main()
